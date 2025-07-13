@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric Authentication with WebAuthn</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+        
+        .section h2 {
+            color: #555;
+            margin-top: 0;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input[type="text"], input[type="email"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .biometric-icon {
+            font-size: 48px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .success {
+            color: #28a745;
+            background: #d4edda;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .jwt-token {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+            margin: 15px 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        
+        .status {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔐 Biometric Authentication</h1>
+
+    <!-- Registration Section -->
+    <div class="section">
+        <h2>📝 Register New User</h2>
+        <div class="biometric-icon">👤</div>
+
+        <div class="form-group">
+            <label for="regUsername">Username:</label>
+            <input type="text" id="regUsername" placeholder="Enter username">
+        </div>
+
+        <div class="form-group">
+            <label for="regEmail">Email:</label>
+            <input type="email" id="regEmail" placeholder="Enter email">
+        </div>
+
+        <div class="form-group">
+            <label for="regDisplayName">Display Name:</label>
+            <input type="text" id="regDisplayName" placeholder="Enter display name">
+        </div>
+
+        <button onclick="registerUser()">Register with Biometrics</button>
+
+        <div id="registrationStatus" class="status"></div>
+        <div id="registrationLoading" class="loading">
+            <div class="spinner"></div>
+            <p>Setting up biometric authentication...</p>
+        </div>
+    </div>
+
+    <!-- Authentication Section -->
+    <div class="section">
+        <h2>🔒 Login with Biometrics</h2>
+        <div class="biometric-icon">🔐</div>
+
+        <div class="form-group">
+            <label for="authUsername">Username:</label>
+            <input type="text" id="authUsername" placeholder="Enter username">
+        </div>
+
+        <button onclick="authenticateUser()">Login with Face ID / Fingerprint</button>
+
+        <div id="authenticationStatus" class="status"></div>
+        <div id="authenticationLoading" class="loading">
+            <div class="spinner"></div>
+            <p>Authenticating with biometrics...</p>
+        </div>
+
+        <div id="jwtResult" class="jwt-token" style="display: none;"></div>
+    </div>
+
+    <!-- WebAuthn Support Check -->
+    <div class="section">
+        <h2>🔍 Device Support</h2>
+        <div id="webauthnSupport"></div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = 'http://localhost:8080/api/auth';
+
+    // Check WebAuthn support
+    function checkWebAuthnSupport() {
+        const supportDiv = document.getElementById('webauthnSupport');
+
+        if (!window.PublicKeyCredential) {
+            supportDiv.innerHTML = '<div class="error">❌ WebAuthn not supported on this device</div>';
+            return false;
+        }
+
+        if (!navigator.credentials) {
+            supportDiv.innerHTML = '<div class="error">❌ Credentials API not supported</div>';
+            return false;
+        }
+
+        // Check for platform authenticator (Touch ID, Face ID, Windows Hello)
+        PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+            .then(available => {
+                if (available) {
+                    supportDiv.innerHTML = '<div class="success">✅ Biometric authentication available (Face ID, Touch ID, or Windows Hello)</div>';
+                } else {
+                    supportDiv.innerHTML = '<div class="error">⚠️ Platform authenticator not available. External security keys may still work.</div>';
+                }
+            })
+            .catch(err => {
+                supportDiv.innerHTML = '<div class="error">❌ Error checking authenticator availability</div>';
+            });
+
+        return true;
+    }
+
+    // Utility functions
+    function showLoading(elementId, show) {
+        document.getElementById(elementId).style.display = show ? 'block' : 'none';
+    }
+
+    function showStatus(elementId, message, isError = false) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = `<div class="${isError ? 'error' : 'success'}">${message}</div>`;
+    }
+
+    function clearStatus(elementId) {
+        document.getElementById(elementId).innerHTML = '';
+    }
+
+    // Base64URL utilities
+    function base64UrlToUint8Array(base64Url) {
+        const padding = '='.repeat((4 - base64Url.length % 4) % 4);
+        const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+
+    function uint8ArrayToBase64Url(uint8Array) {
+        let str = '';
+        for (let i = 0; i < uint8Array.length; i++) {
+            str += String.fromCharCode(uint8Array[i]);
+        }
+        return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    // Registration function
+    async function registerUser() {
+        const username = document.getElementById('regUsername').value;
+        const email = document.getElementById('regEmail').value;
+        const displayName = document.getElementById('regDisplayName').value;
+
+        if (!username || !email || !displayName) {
+            showStatus('registrationStatus', 'Please fill in all fields', true);
+            return;
+        }
+
+        if (!checkWebAuthnSupport()) {
+            return;
+        }
+
+        showLoading('registrationLoading', true);
+        clearStatus('registrationStatus');
+
+        try {
+            // Step 1: Start registration
+            const startResponse = await fetch(`${API_BASE}/register/start`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    username: username,
+                    email: email,
+                    displayName: displayName
+                })
+            });
+
+            if (!startResponse.ok) {
+                throw new Error('Failed to start registration');
+            }
+
+            const registrationOptions = await startResponse.json();
+
+            // Step 2: Convert options for WebAuthn API
+            const publicKeyCredentialCreationOptions = {
+                challenge: base64UrlToUint8Array(registrationOptions.challenge),
+                rp: registrationOptions.rp,
+                user: {
+                    id: base64UrlToUint8Array(registrationOptions.user.id),
+                    name: registrationOptions.user.name,
+                    displayName: registrationOptions.user.displayName,
+                },
+                pubKeyCredParams: registrationOptions.pubKeyCredParams,
+                authenticatorSelection: registrationOptions.authenticatorSelection,
+                timeout: registrationOptions.timeout,
+                attestation: registrationOptions.attestation
+            };
+
+            // Step 3: Create credential
+            const credential = await navigator.credentials.create({
+                publicKey: publicKeyCredentialCreationOptions
+            });
+
+            // Step 4: Prepare credential for server
+            const credentialData = {
+                id: credential.id,
+                rawId: uint8ArrayToBase64Url(new Uint8Array(credential.rawId)),
+                response: {
+                    attestationObject: uint8ArrayToBase64Url(new Uint8Array(credential.response.attestationObject)),
+                    clientDataJSON: uint8ArrayToBase64Url(new Uint8Array(credential.response.clientDataJSON))
+                },
+                type: credential.type,
+                publicKey: uint8ArrayToBase64Url(new Uint8Array(credential.response.getPublicKey()))
+            };
+
+            // Step 5: Finish registration
+            const finishResponse = await fetch(`${API_BASE}/register/finish`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    challengeId: registrationOptions.challengeId,
+                    credential: credentialData
+                })
+            });
+
+            if (!finishResponse.ok) {
+                throw new Error('Failed to complete registration');
+            }
+
+            const result = await finishResponse.json();
+
+            if (result.success) {
+                showStatus('registrationStatus', '✅ Registration successful! You can now login with biometrics.');
+            } else {
+                throw new Error(result.message || 'Registration failed');
+            }
+
+        } catch (error) {
+            console.error('Registration error:', error);
+            showStatus('registrationStatus', `❌ Registration failed: ${error.message}`, true);
+        } finally {
+            showLoading('registrationLoading', false);
+        }
+    }
+
+    // Authentication function
+    async function authenticateUser() {
+        const username = document.getElementById('authUsername').value;
+
+        if (!username) {
+            showStatus('authenticationStatus', 'Please enter username', true);
+            return;
+        }
+
+        if (!checkWebAuthnSupport()) {
+            return;
+        }
+
+        showLoading('authenticationLoading', true);
+        clearStatus('authenticationStatus');
+        document.getElementById('jwtResult').style.display = 'none';
+
+        try {
+            // Step 1: Start authentication
+            const startResponse = await fetch(`${API_BASE}/login/start`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+
+                })
+            });
+
+            if (!startResponse.ok) {
+                throw new Error('Failed to start authentication');
+            }
+
+            const authenticationOptions = await startResponse.json();
+
+            // Step 2: Convert options for WebAuthn API
+            const publicKeyCredentialRequestOptions = {
+                challenge: base64UrlToUint8Array(authenticationOptions.challenge),
+                allowCredentials: authenticationOptions.allowCredentials.map(cred => ({
+                    id: base64UrlToUint8Array(cred.id),
+                    type: cred.type,
+                    transports: cred.transports
+                })),
+                timeout: authenticationOptions.timeout,
+                userVerification: authenticationOptions.userVerification,
+                rpId: authenticationOptions.rpId
+            };
+
+            // Step 3: Get credential
+            const credential = await navigator.credentials.get({
+                publicKey: publicKeyCredentialRequestOptions
+            });
+
+            // Step 4: Prepare credential for server
+            const credentialData = {
+                id: credential.id,
+                rawId: uint8ArrayToBase64Url(new Uint8Array(credential.rawId)),
+                response: {
+                    authenticatorData: uint8ArrayToBase64Url(new Uint8Array(credential.response.authenticatorData)),
+                    clientDataJSON: uint8ArrayToBase64Url(new Uint8Array(credential.response.clientDataJSON)),
+                    signature: uint8ArrayToBase64Url(new Uint8Array(credential.response.signature)),
+                    userHandle: credential.response.userHandle ? uint8ArrayToBase64Url(new Uint8Array(credential.response.userHandle)) : null
+                },
+                type: credential.type
+            };
+
+            // Step 5: Finish authentication
+            const finishResponse = await fetch(`${API_BASE}/login/finish`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    challengeId: authenticationOptions.challengeId,
+                    credential: credentialData
+                })
+            });
+
+            if (!finishResponse.ok) {
+                throw new Error('Failed to complete authentication');
+            }
+
+            const result = await finishResponse.json();
+
+            if (result.token) {
+                showStatus('authenticationStatus', '✅ Authentication successful!');
+                document.getElementById('jwtResult').innerHTML = `
+                    <h3>JWT Token Generated:</h3>
+                    <strong>Token:</strong> ${result.token}<br>
+                    <strong>Type:</strong> ${result.type}<br>
+                    <strong>Username:</strong> ${result.username}<br>
+                    <strong>Email:</strong> ${result.email}
+                `;
+                document.getElementById('jwtResult').style.display = 'block';
+            } else {
+                throw new Error(result.error || 'Authentication failed');
+            }
+
+        } catch (error) {
+            console.error('Authentication error:', error);
+            showStatus('authenticationStatus', `❌ Authentication failed: ${error.message}`, true);
+        } finally {
+            showLoading('authenticationLoading', false);
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        checkWebAuthnSupport();
+    });
+</script>
+</body>
+</html>
